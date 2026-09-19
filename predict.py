@@ -75,57 +75,59 @@ class Predictor(BasePredictor):
             description="Song lyrics with section tags ([verse], [chorus], etc.). Use Shift+Enter for newlines.",
             default=DEFAULT_LYRICS,
         ),
-        audio_format: str = Input(
-            description="Audio output format (MP3 is compressed and fast to download; WAV/FLAC are lossless)",
-            choices=["mp3", "wav", "flac"],
-            default="mp3",
-        ),
         cot: str = Input(
-            description="Symbolic planning: 'full' (chords+melody), 'melody' (faster), 'off' (fastest, skips score)",
+            description="Symbolic planning: 'full' (plans chords + melody), 'melody' (plans melody only), 'off' (direct synthesis)",
             choices=["full", "melody", "off"],
             default="full",
         ),
-        diffusion_steps: int = Input(
-            description="Acoustic diffusion steps (15-20 for fast drafting, 25-30 for sweet spot, 50 for max fidelity)",
-            ge=10,
-            le=100,
-            default=25,
+        cfg_scale: float = Input(
+            description="Text prompt guidance scale (1.0 to 1.5 recommended)",
+            ge=1.0,
+            le=3.0,
+            default=1.2,
         ),
-        audio_duration: float = Input(
-            description="Target song duration in seconds (shorter = faster generation and lower cost)",
-            ge=15.0,
-            le=360.0,
-            default=60.0,
+        audio_format: str = Input(
+            description="Audio output format",
+            choices=["mp3", "wav", "flac"],
+            default="mp3",
+        ),
+        custom_abc: str = Input(
+            description="(Optional) Supply your own ABC score. Overrides automatic planning if provided.",
+            default=None,
         ),
         seed: int = Input(
             description="Random seed for reproducibility (-1 for random)",
             default=-1,
         ),
     ) -> Path:
-        """Run a single music generation request."""
-        # 1. Handle random seed: converts -1 into a valid positive 32-bit integer
+        """Run music generation using official YuE2 API."""
         if seed < 0:
             seed = random.randint(0, 2**32 - 1)
         print(f"Executing generation with seed: {seed}")
 
-        # 2. Sanitize lyrics (handles literal '\n' if typed or pasted)
         formatted_lyrics = lyrics.replace("\\n", "\n").strip()
 
-        # 3. Generate music
-        song = self.pipe(
-            style=style,
-            lyrics=formatted_lyrics,
-            cot=cot,
-            steps=diffusion_steps,
-            duration=audio_duration,
-            seed=seed,
-        )
+        # Build official request arguments
+        request_kwargs = {
+            "style": style,
+            "lyrics": formatted_lyrics,
+            "cot": cot,
+            "cfg_scale": cfg_scale,
+            "seed": seed,
+        }
+
+        # If user supplied custom ABC score, pass it to bypass the planner
+        if custom_abc and custom_abc.strip():
+            request_kwargs["abc"] = custom_abc.strip()
+
+        # Execute official pipeline
+        song = self.pipe(**request_kwargs)
 
         output_dir = tempfile.mkdtemp()
         song.save_artifacts(output_dir)
         raw_flac = os.path.join(output_dir, "audio.flac")
 
-        # 4. Transcode to selected format
+        # Transcode output format
         if audio_format == "mp3":
             final_output = os.path.join(output_dir, "song.mp3")
             subprocess.run(

@@ -4,13 +4,14 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual trigger from GitHub web interface
 
 jobs:
   build-and-push:
     name: Cog Push
     runs-on: ubuntu-latest
     steps:
+      # Step 1: Free up disk space on the GitHub runner
       - name: Free Disk Space
         uses: jlumbroso/free-disk-space@main
         with:
@@ -21,15 +22,17 @@ jobs:
           large-packages: true
           swap-storage: false
 
+      # Step 2: Check out repository code
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # Step 3: Install Cog & authenticate with Replicate
       - name: Setup Cog
         uses: replicate/setup-cog@v2
         with:
           token: ${{ secrets.REPLICATE_API_TOKEN }}
-          cog-version: "v0.22.0" # Explicitly use the modern Cog release
 
+      # Step 4: Build container and push to Replicate
       - name: Push Model to Replicate
         run: |
           cog push r8.im/designdeka/yue-2-music
