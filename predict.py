@@ -6,56 +6,34 @@ from cog import BasePredictor, Input, Path
 from yue2 import YuE2Pipeline
 
 DEFAULT_STYLE = (
-    "1980s japanese city pop, upbeat funk groove, funky slap bass, bright brass horns, "
-    "sparkling DX7 electric piano, punchy gated reverb drums, crisp rhythm guitar, "
-    "120 bpm, nostalgic summer twilight, crystal clear expressive female vocals, breezy disco pop"
+    "french acid jazz, nu jazz, st germain style, saint germain des pres cafe, "
+    "deep jazz house groove, 118 bpm, deep walking acoustic upright bass, "
+    "warm fender rhodes electric piano chords, smoky muted jazz trumpet solo, "
+    "breathy tenor saxophone, atmospheric jazz flute, syncopated congas and brushed drums, "
+    "late night parisian lounge, pure instrumental, sophisticated, vinyl warmth"
 )
 
-DEFAULT_LYRICS = """[intro]
-(funky slap bass groove, bright brass stabs, sparkling synths)
-One, two, cruise into the night!
+DEFAULT_LYRICS = """[intro - warm vinyl static, soft finger snaps, brushed ride cymbal, deep acoustic upright bass walking groove]
 
-[verse]
-真夜中のベイショア・ルート (Mayonaka no beishoa ruuto)
-Neon lights dancing on the passenger window
-カーステレオからこぼれるメロディー (Kaa sutereo kara koboreru merodii)
-Come and feel the cool night breeze
-Speeding down through the Tokyo night
-Leave yesterday’s rain behind
+[instrumental - gentle fender rhodes electric piano comping minor ninth chords with lush vintage tremolo]
 
-[chorus]
-Stay with me tonight, 二人だけの (futari dake no)
-City lights in the evening glow!
-恋は sparkling, running free
-もう一度だけ (Mou ichido dake) take a chance with me
-Into the summer midnight dream!
+[theme - muted jazz trumpet enters playing a smoky, melodic motif over a steady 118 bpm deep house kick]
 
-[verse]
-信号が変わる瞬間に (Shingou ga kawaru shunkan ni)
-You turned around with that wistful smile
-星屑みたいな街並みを (Hoshikuzu mitai na machinami wo)
-We’re chasing shadows for another mile
-Don't let the rhythm stop, just let it fly
-Under the violet glowing sky
+[variation - upright bass intensifies with walking swing syncopation, acoustic congas and light shakers enter]
 
-[bridge]
-(horns build up with funky guitar chops)
-Time is slipping through our fingertips
-Can you taste the music on my lips?
-Oh, baby don't say goodbye!
+[solo - breathy tenor saxophone takes over the lead with bluesy, expressive jazz runs]
 
-[chorus]
-Stay with me tonight, 二人だけの (futari dake no)
-Glittering city lights in the twilight glow!
-恋は sparkling, running free
-もう一度だけ (Mou ichido dake) take a chance with me
-Into the summer midnight dream!
+[breakdown - kick drum drops out, warm rhodes chords sustain in reverb, airy flute improvisations drift over vinyl crackle]
 
-[outro]
-(joyful saxophone solo over driving slap bass)
-Night cruise... just you and me.
-Forever in the city lights.
-(fade out)"""
+[buildup - four-on-the-floor brushed kick re-enters, upright bass locks back into the deep pocket groove]
+
+[climax - muted trumpet and tenor sax harmonize over the central riff, syncopated jazz percussion peaks]
+
+[interlude - extended rhodes electric piano solo with subtle stereo panning and complex chord voicings]
+
+[reprise - muted trumpet plays the opening melodic theme softly over the hypnotic walking bassline]
+
+[outro - trumpet and sax fade out, leaving only the upright double bass, Rhodes chords, and gentle brush percussion slowly dissolving into vinyl static]"""
 
 
 class Predictor(BasePredictor):
@@ -65,14 +43,14 @@ class Predictor(BasePredictor):
         self.pipe = YuE2Pipeline.from_pretrained("m-a-p/YuE2-3B", device="cuda")
         print("YuE2 ready for inference.")
 
-    def run(
+    def predict(
         self,
         style: str = Input(
             description="Genre, instruments, mood, tempo, vocal character",
             default=DEFAULT_STYLE,
         ),
         lyrics: str = Input(
-            description="Song lyrics with section tags ([verse], [chorus], etc.). Use Shift+Enter for newlines.",
+            description="Song lyrics or bracketed musical structure tags ([intro], [solo], etc.)",
             default=DEFAULT_LYRICS,
         ),
         cot: str = Input(
@@ -92,7 +70,7 @@ class Predictor(BasePredictor):
             default="mp3",
         ),
         custom_abc: str = Input(
-            description="(Optional) Supply your own ABC score. Overrides automatic planning if provided.",
+            description="(Optional) Pre-written ABC score. Bypasses the symbolic planner if provided.",
             default=None,
         ),
         seed: int = Input(
@@ -101,13 +79,15 @@ class Predictor(BasePredictor):
         ),
     ) -> Path:
         """Run music generation using official YuE2 API."""
+        # 1. Handle random seed: converts -1 into a valid positive 32-bit integer
         if seed < 0:
             seed = random.randint(0, 2**32 - 1)
         print(f"Executing generation with seed: {seed}")
 
+        # 2. Convert literal '\n' if typed into real newlines
         formatted_lyrics = lyrics.replace("\\n", "\n").strip()
 
-        # Build official request arguments
+        # 3. Assemble parameters strictly accepted by SongRequest
         request_kwargs = {
             "style": style,
             "lyrics": formatted_lyrics,
@@ -116,18 +96,18 @@ class Predictor(BasePredictor):
             "seed": seed,
         }
 
-        # If user supplied custom ABC score, pass it to bypass the planner
         if custom_abc and custom_abc.strip():
             request_kwargs["abc"] = custom_abc.strip()
 
-        # Execute official pipeline
+        # 4. Execute official pipeline
         song = self.pipe(**request_kwargs)
 
+        # 5. Save generated artifacts
         output_dir = tempfile.mkdtemp()
         song.save_artifacts(output_dir)
         raw_flac = os.path.join(output_dir, "audio.flac")
 
-        # Transcode output format
+        # 6. Transcode to requested format
         if audio_format == "mp3":
             final_output = os.path.join(output_dir, "song.mp3")
             subprocess.run(
