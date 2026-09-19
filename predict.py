@@ -1,53 +1,51 @@
 import os
-import torch
-import torchaudio
+import tempfile
 from cog import BasePredictor, Input, Path
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
-# The upstream YuE 2 checkpoint
-MODEL_ID = "m-a-p/YuE2" 
+from yue2 import YuE2Pipeline
 
 class Predictor(BasePredictor):
     def setup(self):
-        """Runs once when the cloud GPU container starts up."""
-        print("Loading YuE2 weights onto GPU...")
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        # Native BF16 precision (runs at full speed on A40/A100)
-        self.tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        self.model = AutoModelForCausalLM.from_pretrained(
-            MODEL_ID,
-            torch_dtype=torch.bfloat16,
-            device_map="auto"
-        )
+        """Loads the official YuE2-3B pipeline onto the GPU once at boot."""
+        print("Loading YuE2-3B pipeline from Hugging Face...")
+        # YuE2Pipeline automatically loads the AR planner, NAR flow-matcher, and YuE2-Vae decoder
+        self.pipe = YuE2Pipeline.from_pretrained("m-a-p/YuE2-3B", device="cuda")
         print("YuE2 ready for inference.")
 
     def predict(
         self,
-        style_prompt: str = Input(
-            description="Genre, mood, tempo, instruments, vocal style",
-            default="lofi hip hop, jazzy boom bap, warm Rhodes piano, relaxed 86 bpm swing drums, introspective male vocals"
+        style: str = Input(
+            description="Genre, instruments, mood, tempo, vocal character",
+            default="1980s japanese city pop, upbeat funk groove, slap bass, bright brass, 120 bpm, female vocals"
         ),
         lyrics: str = Input(
-            description="Lyrics with structure tags ([verse], [chorus], etc.)",
-            default="[verse]\nRaindrops tapping on the glass...\n[chorus]\nTime to let the cadence pass."
+            description="Song lyrics with section tags ([verse], [chorus], etc.)",
+            default="[verse]\nCity lights shining in the night...\n[chorus]\nStay with me tonight!"
         ),
-        max_tokens: int = Input(
-            description="Maximum generation tokens",
-            default=1500
+        cot: str = Input(
+            description="Planning mode: full (melody + chords), melody (melody only), off (no score)",
+            choices=["full", "melody", "off"],
+            default="full"
         ),
         seed: int = Input(
-            description="Random seed (-1 for random)",
+            description="Random seed for reproducibility (-1 for random)",
             default=-1
         ),
     ) -> Path:
-        """Runs per request."""
-        if seed != -1:
-            torch.manual_seed(seed)
-            
-        output_file = "/tmp/song_output.mp3"
-
-        # --- Ingest Prompt & Run Generation ---
-        # (Execute model generation pipeline and save output_file)
-
-        return Path(output_file)
+        """Run a single music generation request."""
+        gen_seed = None if seed == -1 else seed
+        
+        # Run generation through the official YuE 2 pipeline
+        song = self.pipe(
+            style=style,
+            lyrics=lyrics,
+            cot=cot,
+            seed=gen_seed,
+        )
+        
+        # Save output artifacts to a temporary directory
+        output_dir = tempfile.mkdtemp()
+        song.save_artifacts(output_dir)
+        
+        # The official pipeline produces 'audio.flac' at 48 kHz stereo
+        output_flac = os.path.join(output_dir, "audio.flac")
+        return Path(output_flac)
