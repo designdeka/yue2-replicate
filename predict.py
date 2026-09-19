@@ -7,11 +7,10 @@ class Predictor(BasePredictor):
     def setup(self):
         """Loads the official YuE2-3B pipeline onto the GPU once at boot."""
         print("Loading YuE2-3B pipeline from Hugging Face...")
-        # YuE2Pipeline automatically loads the AR planner, NAR flow-matcher, and YuE2-Vae decoder
         self.pipe = YuE2Pipeline.from_pretrained("m-a-p/YuE2-3B", device="cuda")
         print("YuE2 ready for inference.")
 
-    def predict(
+    def run(
         self,
         style: str = Input(
             description="Genre, instruments, mood, tempo, vocal character",
@@ -34,7 +33,6 @@ class Predictor(BasePredictor):
         """Run a single music generation request."""
         gen_seed = None if seed == -1 else seed
         
-        # Run generation through the official YuE 2 pipeline
         song = self.pipe(
             style=style,
             lyrics=lyrics,
@@ -42,10 +40,8 @@ class Predictor(BasePredictor):
             seed=gen_seed,
         )
         
-        # Save output artifacts to a temporary directory
         output_dir = tempfile.mkdtemp()
         song.save_artifacts(output_dir)
         
-        # The official pipeline produces 'audio.flac' at 48 kHz stereo
         output_flac = os.path.join(output_dir, "audio.flac")
         return Path(output_flac)
