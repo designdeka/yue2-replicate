@@ -1,14 +1,13 @@
 build:
   gpu: true
-  python_version: "3.12"
+  cuda: "12.1"
+  python_version: "3.11"
   system_packages:
     - "ffmpeg"
     - "git"
     - "wget"
     - "curl"
   python_packages:
-    - "torch==2.4.0"
-    - "torchaudio==2.4.0"
     - "comfy-aimdo"
     - "comfy-kitchen"
     - "av"
@@ -16,6 +15,7 @@ build:
     - "websocket-client"
     - "requests"
   run:
+    - "pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cu121"
     - "git clone https://github.com/comfyanonymous/ComfyUI.git /root/ComfyUI"
     - "pip install --no-cache-dir -r /root/ComfyUI/requirements.txt"
     - "mkdir -p /root/ComfyUI/models/checkpoints"
