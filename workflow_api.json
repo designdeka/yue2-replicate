@@ -56,21 +56,6 @@
       "title": "Save Audio (Advanced)"
     }
   },
-  "14": {
-    "inputs": {
-      "preview_markdown": "",
-      "preview_text": "",
-      "previewMode": null,
-      "source": [
-        "15",
-        1
-      ]
-    },
-    "class_type": "PreviewAny",
-    "_meta": {
-      "title": "Preview as Text"
-    }
-  },
   "15": {
     "inputs": {
       "ckpt_name": "yue2_3b_int8_convrot.safetensors"
@@ -103,7 +88,7 @@
       "style": "",
       "lyrics": "",
       "abc": [
-        "29",
+        "23",
         0
       ],
       "seed": 17,
@@ -124,13 +109,21 @@
       "title": "YuE2 Generate Music"
     }
   },
-  "29": {
+  "23": {
     "inputs": {
-      "text": ""
+      "clip": [
+        "15",
+        1
+      ],
+      "style": "",
+      "lyrics": "",
+      "seed": 10,
+      "mode": "full",
+      "max_abc_tokens": 8192
     },
-    "class_type": "Text Multiline",
+    "class_type": "YuE2GenerateABC",
     "_meta": {
-      "title": "Text Multiline"
+      "title": "YuE2 Generate ABC"
     }
   }
 }

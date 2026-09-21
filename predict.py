@@ -13,9 +13,10 @@ import websocket
 COMFY_HOST = "127.0.0.1:8188"
 COMFY_PYTHON = "/root/comfy_env/bin/python"
 
-
 DEFAULT_STYLE = (
-    "late-night smooth jazz radio station bumper, smoky tenor saxophone, warm rhodes electric piano chords, brush snare, 75 bpm, deep resonant male vocals"
+    "late-night smooth jazz radio station bumper, smoky tenor saxophone, "
+    "warm rhodes electric piano chords, brush snare, 75 bpm, deep resonant male"
+    " vocals"
 )
 
 DEFAULT_LYRICS = """[verse]
@@ -24,6 +25,7 @@ We play the midnight sound for you.
 [chorus]
 Slip into velvet, ease your mind,
 The smoothest rhythm you can find."""
+
 
 class Output(BaseModel):
   audio: Path
@@ -78,8 +80,8 @@ class Predictor(BasePredictor):
       ),
       lyrics: str = Input(
           description=(
-              "Song lyrics or bracketed musical structure tags ([intro], [solo],"
-              " etc.)"
+              "Song lyrics or bracketed musical structure tags ([verse],"
+              " [chorus], etc.)"
           ),
           default=DEFAULT_LYRICS,
       ),
@@ -97,12 +99,16 @@ class Predictor(BasePredictor):
           default="full",
       ),
       max_duration: float = Input(
-          description=(
-              "Target song duration in seconds (controls latent audio frames)"
-          ),
+          description="Target song duration in seconds",
           ge=15.0,
           le=360.0,
-          default=60.0,
+          default=30.0,
+      ),
+      temperature: float = Input(
+          description="Creativity and randomness of generation",
+          ge=0.1,
+          le=2.0,
+          default=1.0,
       ),
       steps: int = Input(
           description=(
@@ -110,7 +116,7 @@ class Predictor(BasePredictor):
           ),
           ge=10,
           le=100,
-          default=25,
+          default=32,
       ),
       sampler_name: str = Input(
           description="Diffusion ODE solver algorithm",
@@ -123,27 +129,15 @@ class Predictor(BasePredictor):
           default="sgm_uniform",
       ),
       max_abc_tokens: int = Input(
-          description=(
-              "Maximum tokens generated during the ABC musical score planning"
-              " stage"
-          ),
+          description="Max tokens for the ABC musical score planning stage",
           ge=256,
           le=8192,
-          default=4096,
-      ),
-      abc_temperature: float = Input(
-          description=(
-              "Randomness of score composition (lower = predictable pop, higher"
-              " = complex/jazz)"
-          ),
-          ge=0.1,
-          le=2.0,
-          default=0.70,
+          default=8192,
       ),
       custom_abc: str = Input(
           description=(
-              "(Optional) Supply your own ABC score to bypass the score"
-              " planning step"
+              "(Optional) Pre-written ABC score. Bypasses the symbolic planner"
+              " if provided."
           ),
           default=None,
       ),
@@ -152,46 +146,52 @@ class Predictor(BasePredictor):
           default=-1,
       ),
   ) -> Output:
-    """Modifies the node graph and executes ComfyUI headless."""
+    """Modifies the dual-stage node graph and executes ComfyUI headless."""
+    # 1. Random seed resolution
     if seed < 0:
       seed = random.randint(0, 2**32 - 1)
-    print(f"Executing ComfyUI job with seed: {seed}")
+    print(f"Executing dual-stage ComfyUI job with seed: {seed}")
 
     formatted_lyrics = lyrics.replace("\\n", "\n").strip()
 
-    # 1. Load exported workflow_api.json
+    # 2. Load workflow_api.json
     with open("workflow_api.json", "r", encoding="utf-8") as f:
       prompt = json.load(f)
 
-    # 2. Inject inputs by matching class_type
-    for node_id, node in prompt.items():
-      class_type = node.get("class_type")
+    # 3. Inject inputs into the true original nodes
+    # Node 23: Stage 1 (YuE2GenerateABC)
+    if "23" in prompt:
+      prompt["23"]["inputs"]["style"] = style
+      prompt["23"]["inputs"]["lyrics"] = formatted_lyrics
+      prompt["23"]["inputs"]["mode"] = cot
+      prompt["23"]["inputs"]["max_abc_tokens"] = max_abc_tokens
+      prompt["23"]["inputs"]["seed"] = seed
 
-      # Stage 1: ABC Score Generation
-      if class_type == "YuE2GenerateABC":
-        node["inputs"]["clip"] = style
-        node["inputs"]["max_abc_tokens"] = max_abc_tokens
-        node["inputs"]["temperature"] = abc_temperature
-        node["inputs"]["seed"] = seed
-        node["inputs"]["mode"] = cot
-        if custom_abc and custom_abc.strip():
-          node["inputs"]["custom_abc"] = custom_abc.strip()
+    # Node 22: Stage 2 (YuE2GenerateMusic)
+    if "22" in prompt:
+      prompt["22"]["inputs"]["style"] = style
+      prompt["22"]["inputs"]["lyrics"] = formatted_lyrics
+      prompt["22"]["inputs"]["mode"] = cot
+      prompt["22"]["inputs"]["max_duration"] = max_duration
+      prompt["22"]["inputs"]["temperature"] = temperature
+      prompt["22"]["inputs"]["seed"] = seed
+      prompt["22"]["inputs"]["cfg_scale"] = 1.0
 
-      # Stage 2: Music Conditioning Engine
-      elif class_type == "YuE2GenerateMusic":
-        node["inputs"]["max_duration"] = max_duration
-        node["inputs"]["seed"] = seed
-        node["inputs"]["mode"] = cot
+      # If custom_abc is supplied, disconnect Node 23 and use raw text
+      if custom_abc and custom_abc.strip():
+        prompt["22"]["inputs"]["abc"] = custom_abc.strip()
+      else:
+        prompt["22"]["inputs"]["abc"] = ["23", 0]
 
-      # Stage 3: Diffusion KSampler
-      elif class_type == "KSampler":
-        node["inputs"]["steps"] = steps
-        node["inputs"]["sampler_name"] = sampler_name
-        node["inputs"]["scheduler"] = scheduler
-        node["inputs"]["seed"] = seed
-        node["inputs"]["cfg"] = 1.0
+    # Node 8: Stage 3 (KSampler)
+    if "8" in prompt:
+      prompt["8"]["inputs"]["steps"] = steps
+      prompt["8"]["inputs"]["sampler_name"] = sampler_name
+      prompt["8"]["inputs"]["scheduler"] = scheduler
+      prompt["8"]["inputs"]["seed"] = seed
+      prompt["8"]["inputs"]["cfg"] = 1.0
 
-    # 3. Submit workflow to ComfyUI
+    # 4. Submit workflow to local ComfyUI
     client_id = str(uuid.uuid4())
     ws = websocket.WebSocket()
     ws.connect(f"ws://{COMFY_HOST}/ws?clientId={client_id}")
@@ -202,7 +202,7 @@ class Predictor(BasePredictor):
     response = json.loads(urllib.request.urlopen(req).read())
     prompt_id = response["prompt_id"]
 
-    # 4. Wait for execution to finish via WebSocket
+    # 5. Wait for execution to finish via WebSocket events
     while True:
       out = ws.recv()
       if isinstance(out, str):
@@ -215,40 +215,44 @@ class Predictor(BasePredictor):
         continue
     ws.close()
 
-    # 5. Locate generated output audio
-    output_dir = "/root/ComfyUI/output"
-    audio_files = [
-        os.path.join(output_dir, f)
-        for f in os.listdir(output_dir)
-        if f.endswith((".flac", ".wav", ".mp3"))
-    ]
-    if not audio_files:
-      raise RuntimeError("No audio file found in ComfyUI output directory.")
+    # 6. Locate generated audio file recursively inside ComfyUI output directory
+    output_root = "/root/ComfyUI/output"
+    found_audio = []
+    found_text = []
 
-    latest_audio = max(audio_files, key=os.path.getctime)
+    for root, _, files in os.walk(output_root):
+      for f in files:
+        full_path = os.path.join(root, f)
+        if f.endswith((".flac", ".wav", ".mp3")):
+          found_audio.append(full_path)
+        elif f.endswith((".abc", ".txt")):
+          found_text.append(full_path)
 
-    # 6. Extract generated score.abc if present
+    if not found_audio:
+      raise RuntimeError(
+          "No audio file was produced in the ComfyUI output directory."
+      )
+
+    latest_audio = max(found_audio, key=os.path.getmtime)
+
     abc_text = ""
-    txt_files = [
-        os.path.join(output_dir, f)
-        for f in os.listdir(output_dir)
-        if f.endswith((".abc", ".txt"))
-    ]
-    if txt_files:
-      latest_abc = max(txt_files, key=os.path.getctime)
-      with open(latest_abc, "r", encoding="utf-8") as f:
+    if found_text:
+      latest_text = max(found_text, key=os.path.getmtime)
+      with open(latest_text, "r", encoding="utf-8") as f:
         abc_text = f.read()
 
     # 7. Transcode to requested format
     final_output = latest_audio
+    output_dir = os.path.dirname(latest_audio)
+
     if audio_format == "mp3" and not latest_audio.endswith(".mp3"):
-      final_output = os.path.splitext(latest_audio)[0] + "_out.mp3"
+      final_output = os.path.join(output_dir, f"song_{prompt_id}.mp3")
       subprocess.run(
           ["ffmpeg", "-y", "-i", latest_audio, "-b:a", "320k", final_output],
           check=True,
       )
     elif audio_format == "wav" and not latest_audio.endswith(".wav"):
-      final_output = os.path.splitext(latest_audio)[0] + "_out.wav"
+      final_output = os.path.join(output_dir, f"song_{prompt_id}.wav")
       subprocess.run(
           ["ffmpeg", "-y", "-i", latest_audio, final_output], check=True
       )
