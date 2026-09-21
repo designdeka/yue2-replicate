@@ -5,7 +5,20 @@ build:
     - "ffmpeg"
     - "git"
     - "wget"
+    - "curl"
   python_packages:
-    - "git+https://github.com/multimodal-art-projection/YuE.git"
+    - "torch==2.6.0"
+    - "torchaudio==2.6.0"
+    - "comfy-aimdo"
+    - "comfy-kitchen"
+    - "av"
+    - "soundfile"
+    - "websocket-client"
+    - "requests"
+  run:
+    - "git clone https://github.com/comfyanonymous/ComfyUI.git /root/ComfyUI"
+    - "pip install --no-cache-dir -r /root/ComfyUI/requirements.txt"
+    - "mkdir -p /root/ComfyUI/models/checkpoints"
+    - "wget -c https://huggingface.co/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_int8_convrot.safetensors -O /root/ComfyUI/models/checkpoints/yue2_3b_int8_convrot.safetensors"
 
 predict: "predict.py:Predictor"
