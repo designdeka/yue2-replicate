@@ -18,6 +18,5 @@ build:
     - "/root/comfy_env/bin/pip install --no-cache-dir -r /root/ComfyUI/requirements.txt"
     - "/root/comfy_env/bin/pip install --no-cache-dir comfy-aimdo comfy-kitchen av soundfile websocket-client requests"
     - "mkdir -p /root/ComfyUI/models/checkpoints"
-    - "wget -c https://huggingface.co/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_int8_convrot.safetensors -O /root/ComfyUI/models/checkpoints/yue2_3b_int8_convrot.safetensors"
 
 predict: "predict.py:Predictor"

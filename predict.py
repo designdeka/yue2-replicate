@@ -12,6 +12,10 @@ import websocket
 
 COMFY_HOST = "127.0.0.1:8188"
 COMFY_PYTHON = "/root/comfy_env/bin/python"
+CHECKPOINT_URL = "https://huggingface.co/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_int8_convrot.safetensors"
+CHECKPOINT_PATH = (
+    "/root/ComfyUI/models/checkpoints/yue2_3b_int8_convrot.safetensors"
+)
 
 DEFAULT_STYLE = (
     "late-night smooth jazz radio station bumper, smoky tenor saxophone, "
@@ -35,7 +39,24 @@ class Output(BaseModel):
 class Predictor(BasePredictor):
 
   def setup(self):
-    """Starts ComfyUI headless server in the background using its dedicated virtualenv."""
+    """Downloads weights if missing and boots ComfyUI in its dedicated virtualenv."""
+    # 1. Download model weights on boot over Replicate's high-speed datacenter pipe
+    os.makedirs(os.path.dirname(CHECKPOINT_PATH), exist_ok=True)
+    if (
+        not os.path.exists(CHECKPOINT_PATH)
+        or os.path.getsize(CHECKPOINT_PATH) < 3_500_000_000
+    ):
+      print(f"Downloading YuE2 INT8 checkpoint (~3.96 GB) to {CHECKPOINT_PATH}...")
+      # --progress=dot:giga outputs 1 dot per GB to prevent log buffer clipping
+      subprocess.run(
+          ["wget", "-c", "--progress=dot:giga", CHECKPOINT_URL, "-O", CHECKPOINT_PATH],
+          check=True,
+      )
+      print("Checkpoint download complete.")
+    else:
+      print("Checkpoint already present in container cache.")
+
+    # 2. Start ComfyUI headless server in the background
     print("Starting background ComfyUI instance in isolated virtualenv...")
     cmd = [
         COMFY_PYTHON,
@@ -51,7 +72,7 @@ class Predictor(BasePredictor):
     ]
     self.comfy_process = subprocess.Popen(cmd)
 
-    # Poll port until ComfyUI is online
+    # 3. Poll until ComfyUI responds on port 8188
     ready = False
     for _ in range(60):
       if self.comfy_process.poll() is not None:
@@ -158,8 +179,7 @@ class Predictor(BasePredictor):
     with open("workflow_api.json", "r", encoding="utf-8") as f:
       prompt = json.load(f)
 
-    # 3. Inject inputs into the true original nodes
-    # Node 23: Stage 1 (YuE2GenerateABC)
+    # 3. Inject inputs into Node 23 (YuE2GenerateABC)
     if "23" in prompt:
       prompt["23"]["inputs"]["style"] = style
       prompt["23"]["inputs"]["lyrics"] = formatted_lyrics
@@ -172,7 +192,7 @@ class Predictor(BasePredictor):
       prompt["23"]["inputs"]["penalty_window"] = 100
       prompt["23"]["inputs"]["seed"] = seed
 
-    # Node 22: Stage 2 (YuE2GenerateMusic)
+    # 4. Inject inputs into Node 22 (YuE2GenerateMusic)
     if "22" in prompt:
       prompt["22"]["inputs"]["style"] = style
       prompt["22"]["inputs"]["lyrics"] = formatted_lyrics
@@ -185,12 +205,13 @@ class Predictor(BasePredictor):
       prompt["22"]["inputs"]["cfg_scale"] = 1.00
       prompt["22"]["inputs"]["seed"] = seed
 
+      # If custom_abc is supplied, disconnect Node 23 and use raw text
       if custom_abc and custom_abc.strip():
         prompt["22"]["inputs"]["abc"] = custom_abc.strip()
       else:
         prompt["22"]["inputs"]["abc"] = ["23", 0]
 
-    # Node 8: Stage 3 (KSampler)
+    # 5. Inject inputs into Node 8 (KSampler)
     if "8" in prompt:
       prompt["8"]["inputs"]["steps"] = steps
       prompt["8"]["inputs"]["sampler_name"] = sampler_name
@@ -199,7 +220,7 @@ class Predictor(BasePredictor):
       prompt["8"]["inputs"]["cfg"] = 1.0
       prompt["8"]["inputs"]["denoise"] = 1.0
 
-    # 4. Submit workflow to local ComfyUI
+    # 6. Submit workflow to local ComfyUI instance
     client_id = str(uuid.uuid4())
     ws = websocket.WebSocket()
     ws.connect(f"ws://{COMFY_HOST}/ws?clientId={client_id}")
@@ -210,7 +231,7 @@ class Predictor(BasePredictor):
     response = json.loads(urllib.request.urlopen(req).read())
     prompt_id = response["prompt_id"]
 
-    # 5. Wait for execution to finish via WebSocket events
+    # 7. Wait for execution to finish via WebSocket
     while True:
       out = ws.recv()
       if isinstance(out, str):
@@ -223,7 +244,7 @@ class Predictor(BasePredictor):
         continue
     ws.close()
 
-    # 6. Locate generated audio file recursively inside ComfyUI output directory
+    # 8. Locate generated audio file recursively inside ComfyUI output directory
     output_root = "/root/ComfyUI/output"
     found_audio = []
     found_text = []
@@ -249,7 +270,7 @@ class Predictor(BasePredictor):
       with open(latest_text, "r", encoding="utf-8") as f:
         abc_text = f.read()
 
-    # 7. Transcode to requested format
+    # 9. Transcode to requested format
     final_output = latest_audio
     output_dir = os.path.dirname(latest_audio)
 
