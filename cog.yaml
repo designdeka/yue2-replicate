@@ -8,8 +8,6 @@ build:
     - "wget"
     - "curl"
   python_packages:
-    - "fastapi>=0.115.0"
-    - "pydantic>=2.0"
     - "comfy-aimdo"
     - "comfy-kitchen"
     - "av"
@@ -22,5 +20,6 @@ build:
     - "pip install --no-cache-dir -r /root/ComfyUI/requirements.txt"
     - "mkdir -p /root/ComfyUI/models/checkpoints"
     - "wget -c https://huggingface.co/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_int8_convrot.safetensors -O /root/ComfyUI/models/checkpoints/yue2_3b_int8_convrot.safetensors"
+    - "pip install --no-cache-dir 'pydantic<2'"
 
 predict: "predict.py:Predictor"
