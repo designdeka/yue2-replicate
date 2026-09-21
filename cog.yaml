@@ -8,6 +8,8 @@ build:
     - "wget"
     - "curl"
   python_packages:
+    - "fastapi>=0.115.0"
+    - "pydantic>=2.0"
     - "comfy-aimdo"
     - "comfy-kitchen"
     - "av"
