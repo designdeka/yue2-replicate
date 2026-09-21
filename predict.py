@@ -2,6 +2,7 @@ import json
 import os
 import random
 import subprocess
+import sys
 import time
 import urllib.parse
 import urllib.request
@@ -13,15 +14,15 @@ import websocket
 COMFY_HOST = "127.0.0.1:8188"
 
 DEFAULT_STYLE = (
-    "late-night smooth jazz radio station bumper, smoky tenor saxophone, warm rhodes electric piano chords, brush snare, 75 bpm, sultry whispery female vocals"
+    "late-night smooth jazz radio station bumper, smoky tenor saxophone, warm rhodes electric piano chords, brush snare, 75 bpm, deep resonant male vocals"
 )
 
-DEFAULT_LYRICS = """[jazz station jingle]
+DEFAULT_LYRICS = """[verse]
 When city shadows turn to blue,
 We play the midnight sound for you.
+[chorus]
 Slip into velvet, ease your mind,
 The smoothest rhythm you can find."""
-
 
 class Output(BaseModel):
   audio: Path
@@ -31,10 +32,10 @@ class Output(BaseModel):
 class Predictor(BasePredictor):
 
   def setup(self):
-    """Starts ComfyUI headless server in the background."""
+    """Starts ComfyUI headless server in the background using the active Python interpreter."""
     print("Starting background ComfyUI instance...")
     cmd = [
-        "python",
+        sys.executable,
         "/root/ComfyUI/main.py",
         "--listen",
         "127.0.0.1",
@@ -47,9 +48,16 @@ class Predictor(BasePredictor):
     ]
     self.comfy_process = subprocess.Popen(cmd)
 
-    # Wait until ComfyUI responds on local port
+    # Poll port until ComfyUI is online
     ready = False
     for _ in range(60):
+      # If the process exited/crashed, fail immediately rather than waiting 60s
+      if self.comfy_process.poll() is not None:
+        raise RuntimeError(
+            f"ComfyUI process exited prematurely with return code"
+            f" {self.comfy_process.returncode}"
+        )
+
       try:
         res = requests.get(f"http://{COMFY_HOST}/system_stats", timeout=1)
         if res.status_code == 200:
@@ -89,13 +97,17 @@ class Predictor(BasePredictor):
           default="full",
       ),
       max_duration: float = Input(
-          description="Target song duration in seconds (controls latent audio frames)",
+          description=(
+              "Target song duration in seconds (controls latent audio frames)"
+          ),
           ge=15.0,
           le=360.0,
           default=60.0,
       ),
       steps: int = Input(
-          description="Acoustic diffusion steps (15-20 fast, 25-32 standard, 50 max)",
+          description=(
+              "Acoustic diffusion steps (15-20 fast, 25-32 standard, 50 max)"
+          ),
           ge=10,
           le=100,
           default=25,
@@ -111,19 +123,28 @@ class Predictor(BasePredictor):
           default="sgm_uniform",
       ),
       max_abc_tokens: int = Input(
-          description="Maximum tokens generated during the ABC musical score planning stage",
+          description=(
+              "Maximum tokens generated during the ABC musical score planning"
+              " stage"
+          ),
           ge=256,
           le=8192,
           default=4096,
       ),
       abc_temperature: float = Input(
-          description="Randomness of score composition (lower = predictable pop, higher = complex/jazz)",
+          description=(
+              "Randomness of score composition (lower = predictable pop, higher"
+              " = complex/jazz)"
+          ),
           ge=0.1,
           le=2.0,
           default=0.70,
       ),
       custom_abc: str = Input(
-          description="(Optional) Supply your own ABC score to bypass the score planning step",
+          description=(
+              "(Optional) Supply your own ABC score to bypass the score"
+              " planning step"
+          ),
           default=None,
       ),
       seed: int = Input(
@@ -194,7 +215,7 @@ class Predictor(BasePredictor):
         continue
     ws.close()
 
-    # 5. Locate the generated output audio in ComfyUI's output folder
+    # 5. Locate generated output audio
     output_dir = "/root/ComfyUI/output"
     audio_files = [
         os.path.join(output_dir, f)
@@ -206,7 +227,7 @@ class Predictor(BasePredictor):
 
     latest_audio = max(audio_files, key=os.path.getctime)
 
-    # 6. Extract generated score.abc if saved
+    # 6. Extract generated score.abc if present
     abc_text = ""
     txt_files = [
         os.path.join(output_dir, f)
