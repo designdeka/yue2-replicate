@@ -2,7 +2,6 @@ import json
 import os
 import random
 import subprocess
-import sys
 import time
 import urllib.parse
 import urllib.request
@@ -12,6 +11,8 @@ import requests
 import websocket
 
 COMFY_HOST = "127.0.0.1:8188"
+COMFY_PYTHON = "/root/comfy_env/bin/python"
+
 
 DEFAULT_STYLE = (
     "late-night smooth jazz radio station bumper, smoky tenor saxophone, warm rhodes electric piano chords, brush snare, 75 bpm, deep resonant male vocals"
@@ -32,10 +33,10 @@ class Output(BaseModel):
 class Predictor(BasePredictor):
 
   def setup(self):
-    """Starts ComfyUI headless server in the background using the active Python interpreter."""
-    print("Starting background ComfyUI instance...")
+    """Starts ComfyUI headless server in the background using its dedicated virtualenv."""
+    print("Starting background ComfyUI instance in isolated virtualenv...")
     cmd = [
-        sys.executable,
+        COMFY_PYTHON,
         "/root/ComfyUI/main.py",
         "--listen",
         "127.0.0.1",
@@ -51,10 +52,9 @@ class Predictor(BasePredictor):
     # Poll port until ComfyUI is online
     ready = False
     for _ in range(60):
-      # If the process exited/crashed, fail immediately rather than waiting 60s
       if self.comfy_process.poll() is not None:
         raise RuntimeError(
-            f"ComfyUI process exited prematurely with return code"
+            f"ComfyUI process exited prematurely with code"
             f" {self.comfy_process.returncode}"
         )
 
