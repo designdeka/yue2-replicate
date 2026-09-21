@@ -165,6 +165,11 @@ class Predictor(BasePredictor):
       prompt["23"]["inputs"]["lyrics"] = formatted_lyrics
       prompt["23"]["inputs"]["mode"] = cot
       prompt["23"]["inputs"]["max_abc_tokens"] = max_abc_tokens
+      prompt["23"]["inputs"]["temperature"] = 0.70
+      prompt["23"]["inputs"]["top_p"] = 0.90
+      prompt["23"]["inputs"]["top_k"] = 30
+      prompt["23"]["inputs"]["repetition_penalty"] = 1.005
+      prompt["23"]["inputs"]["penalty_window"] = 100
       prompt["23"]["inputs"]["seed"] = seed
 
     # Node 22: Stage 2 (YuE2GenerateMusic)
@@ -174,10 +179,12 @@ class Predictor(BasePredictor):
       prompt["22"]["inputs"]["mode"] = cot
       prompt["22"]["inputs"]["max_duration"] = max_duration
       prompt["22"]["inputs"]["temperature"] = temperature
+      prompt["22"]["inputs"]["top_p"] = 0.95
+      prompt["22"]["inputs"]["top_k"] = 100
+      prompt["22"]["inputs"]["repetition_penalty"] = 1.20
+      prompt["22"]["inputs"]["cfg_scale"] = 1.00
       prompt["22"]["inputs"]["seed"] = seed
-      prompt["22"]["inputs"]["cfg_scale"] = 1.0
 
-      # If custom_abc is supplied, disconnect Node 23 and use raw text
       if custom_abc and custom_abc.strip():
         prompt["22"]["inputs"]["abc"] = custom_abc.strip()
       else:
@@ -190,6 +197,7 @@ class Predictor(BasePredictor):
       prompt["8"]["inputs"]["scheduler"] = scheduler
       prompt["8"]["inputs"]["seed"] = seed
       prompt["8"]["inputs"]["cfg"] = 1.0
+      prompt["8"]["inputs"]["denoise"] = 1.0
 
     # 4. Submit workflow to local ComfyUI
     client_id = str(uuid.uuid4())
