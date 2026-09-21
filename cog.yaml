@@ -7,8 +7,8 @@ build:
     - "wget"
     - "curl"
   python_packages:
-    - "torch==2.6.0"
-    - "torchaudio==2.6.0"
+    - "torch==2.4.0"
+    - "torchaudio==2.4.0"
     - "comfy-aimdo"
     - "comfy-kitchen"
     - "av"
